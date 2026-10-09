@@ -67,6 +67,91 @@ def _rounded(x, y, w, h, r, seg=4):
     return pts
 
 
+class ClipCanvas:
+    """Wraps a Canvas and clips everything to the rectangle (x0, y0, w, h) in screen pixels."""
+
+    def __init__(self, c, x0, y0, w, h):
+        self.c, self.x0, self.y0, self.x1, self.y1 = c, x0, y0, x0 + w, y0 + h
+
+    def _clip(self, pts):
+        def run(pl, inside, inter):
+            out = []
+            for i in range(len(pl)):
+                a, b = pl[i], pl[(i + 1) % len(pl)]
+                ia, ib = inside(a), inside(b)
+                if ia != ib:
+                    out.append(inter(a, b))
+                if ib:
+                    out.append(b)
+            return out
+        X0, X1, Y0, Y1 = self.x0, self.x1, self.y0, self.y1
+        ix = lambda xv: (lambda a, b: (xv, a[1] + (b[1] - a[1]) * (xv - a[0]) / ((b[0] - a[0]) or 1e-9)))
+        iy = lambda yv: (lambda a, b: (a[0] + (b[0] - a[0]) * (yv - a[1]) / ((b[1] - a[1]) or 1e-9), yv))
+        pl = list(pts)
+        for inside, inter in ((lambda p: p[0] >= X0, ix(X0)), (lambda p: p[0] <= X1, ix(X1)),
+                              (lambda p: p[1] >= Y0, iy(Y0)), (lambda p: p[1] <= Y1, iy(Y1))):
+            if not pl:
+                return []
+            pl = run(pl, inside, inter)
+        return pl
+
+    def _inside(self, pts):
+        return all(self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1 for x, y in pts)
+
+    def poly(self, pts, col):
+        if self._inside(pts):
+            self.c.poly(pts, col)
+        else:
+            cl = self._clip(pts)
+            if len(cl) >= 3:
+                self.c.poly(cl, col)
+
+    def tri(self, a, b, c_, col):
+        self.poly([a, b, c_], col)
+
+    def rect(self, x, y, w, h, col):
+        x0, y0 = max(x, self.x0), max(y, self.y0)
+        x1, y1 = min(x + w, self.x1), min(y + h, self.y1)
+        if x1 > x0 and y1 > y0:
+            self.c.rect(x0, y0, x1 - x0, y1 - y0, col)
+
+    def circle(self, cx, cy, r, col, seg=24):
+        if cx + r < self.x0 or cx - r > self.x1 or cy + r < self.y0 or cy - r > self.y1:
+            return
+        if cx - r >= self.x0 and cx + r <= self.x1 and cy - r >= self.y0 and cy + r <= self.y1:
+            self.c.circle(cx, cy, r, col, seg)
+            return
+        n = max(12, seg)
+        self.poly([(cx + r * math.cos(2 * math.pi * k / n), cy + r * math.sin(2 * math.pi * k / n)) for k in range(n)], col)
+
+    def ring(self, cx, cy, r, th, col, seg=28):
+        ro = r + th / 2
+        if cx + ro < self.x0 or cx - ro > self.x1 or cy + ro < self.y0 or cy - ro > self.y1:
+            return
+        if cx - ro >= self.x0 and cx + ro <= self.x1 and cy - ro >= self.y0 and cy + ro <= self.y1:
+            self.c.ring(cx, cy, r, th, col, seg)
+            return
+        ri, n = max(0.0, r - th / 2), max(16, seg)
+        for i in range(n):
+            a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+            self.poly([(cx + ro * math.cos(a0), cy + ro * math.sin(a0)), (cx + ro * math.cos(a1), cy + ro * math.sin(a1)),
+                       (cx + ri * math.cos(a1), cy + ri * math.sin(a1)), (cx + ri * math.cos(a0), cy + ri * math.sin(a0))], col)
+
+    def line(self, p, q, w, col):
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        ln = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / ln * w / 2, dx / ln * w / 2
+        self.poly([(p[0] + nx, p[1] + ny), (p[0] - nx, p[1] - ny), (q[0] - nx, q[1] - ny), (q[0] + nx, q[1] + ny)], col)
+
+    def polyline(self, pts, w, col):
+        for a, b in zip(pts, pts[1:]):
+            self.line(a, b, w, col)
+
+    def text(self, s, x, y, size, col=(1, 1, 1, 1), align='center'):
+        if self.x0 - 40 <= x <= self.x1 + 40 and self.y0 - 10 <= y <= self.y1 + 10:
+            self.c.text(s, x, y, size, col, align)
+
+
 class Solitaire(ov.BaseGame):
     keys = ('Z', 'H', 'A', 'N', 'M', 'ONE', 'TWO', 'THREE', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3')
 
@@ -668,18 +753,41 @@ class Solitaire(ov.BaseGame):
             else:
                 self._text(c, "No win yet", x + w - 14, y + h - 26, 12, ov.C_TEXT, 'right')
 
+    # ---- header / hint that shrink to fit the panel width
+    def _fit_text(self, c, text, x, y, size, col):
+        px, _, pw, _ = self.panel
+        est = len(text) * 0.56 * size
+        if est > pw * 0.94:
+            size = size * pw * 0.94 / est
+        c.text(text, x, y, size, col)
+
+    def _fit_header(self, c, main, sub=None, col=ov.C_WHITE):
+        px, _, pw, _ = self.panel
+        u = self.u
+        if sub:
+            self._fit_text(c, main, px + pw / 2, self.hy + 10 * u, 19 * u, col)
+            self._fit_text(c, sub, px + pw / 2, self.hy - 13 * u, 12 * u, ov.C_TEXT)
+        else:
+            self._fit_text(c, main, px + pw / 2, self.hy, 19 * u, col)
+
+    def _fit_hint(self, c, text):
+        px, _, pw, _ = self.panel
+        self._fit_text(c, text, px + pw / 2, self.fy, 11 * self.u, ov.C_TEXT)
+
     def draw(self, c):
-        self.draw_frame(c)
+        raw = c
+        self.draw_frame(raw)
+        c = ClipCanvas(raw, self.fx0, self.fy0, W * self.sc, H * self.sc)
         bs, bt = self._best(self.diff)
         if self.menu:
-            self.draw_header(c, "SOLITAIRE", "Best score and fastest win saved for every difficulty", ov.C_GOLD)
+            self._fit_header(raw, "SOLITAIRE", "Best score and fastest win saved for every difficulty", ov.C_GOLD)
             self._menu(c)
-            self.draw_hint(c, "Click or press 1-3 to pick a difficulty   ESC quit")
+            self._fit_hint(raw, "Click or press 1-3 to pick a difficulty   ESC quit")
             return
         left = ""
         if self.cfg['redeals'] is not None:
             left = "   |   Redeals left %d" % (self.cfg['redeals'] - self.redeals)
-        self.draw_header(c, "SOLITAIRE - %s" % self.cfg['name'],
+        self._fit_header(raw, "SOLITAIRE - %s" % self.cfg['name'],
                          "Score %d   |   Moves %d   |   Time %s   |   Best %d (%s)%s" % (
                              self.score, self.moves, _fmt(self.play_t), bs, _fmt(bt), left),
                          tuple(self.cfg['col']) + (1.0,))
@@ -747,7 +855,7 @@ class Solitaire(ov.BaseGame):
             self._text(c, "Time  %s%s" % (_fmt(self.play_t), "   NEW BEST TIME!" if self.new_best_time else ""), W / 2, 210, 15,
                        GOLD if self.new_best_time else ov.C_TEXT)
             self._text(c, "Click: new deal     M: change difficulty", W / 2, 160, 13, ov.C_TEXT)
-        self.draw_hint(c, "Click a card then a target   dbl-click / right-click: foundation   Z undo  H hint  A auto  N new  M menu")
+        self._fit_hint(raw, "Click a card then a target   dbl-click / right-click: foundation   Z undo  H hint  A auto  N new  M menu")
 
 
 RUNNER = ov.Runner("solitaire", GAME_NAME, Solitaire, [

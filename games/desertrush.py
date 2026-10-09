@@ -5,7 +5,7 @@ tanks, rescue the prisoners (POWs) for bonus points and weapons, then bring down
 the gunship at the end. One hit kills, you have a few lives.
 
     A / D (hold)   run          SPACE / W   jump
-    Mouse          aim          click / J   shoot (F toggles auto-fire)
+    Mouse          aim          click / J   start / stop firing (the gun fires by itself while ON)
     G / right click   throw a grenade        M menu
 
 Three difficulties; the best score and the fastest mission clear are saved for
@@ -122,7 +122,7 @@ class DesertRush(ov.BaseGame):
         self.sc, self.fx0, self.fy0 = 1.0, 0.0, 0.0
         self.time = 0.0
         self.mouse = (W * 0.7, 200.0)
-        self.autofire = True
+        self.firing = True                 # click / J toggles it
         rng = random.Random(21)
         self.ruins = [(x, rng.uniform(60, 150), rng.uniform(40, 90), rng.random()) for x in range(0, 1400, 70)]
         self.dunes = [(x, rng.uniform(20, 50), rng.uniform(140, 260)) for x in range(-200, 1800, 130)]
@@ -303,6 +303,12 @@ class DesertRush(ov.BaseGame):
                 p.weapon = 'pistol'
                 self.msg, self.msg_t = "Out of ammo", 0.8
 
+    def _toggle_fire(self):
+        if self.phase != 'play':
+            return
+        self.firing = not self.firing
+        self.msg, self.msg_t = "Firing %s" % ("ON" if self.firing else "OFF"), 0.9
+
     def _throw(self):
         p = self.p
         if p.gren <= 0 or self.phase != 'play':
@@ -472,7 +478,7 @@ class DesertRush(ov.BaseGame):
             p.y += p.vy * dt
             if p.y <= 0:
                 p.y, p.vy = 0.0, 0.0
-        if self.autofire:
+        if self.firing:
             self._fire()
         # pickups
         for it in self.items:
@@ -640,7 +646,7 @@ class DesertRush(ov.BaseGame):
         if button == 'RIGHT':
             self._throw()
         else:
-            self._fire()
+            self._toggle_fire()
 
     def key(self, key, repeat):
         if self.menu:
@@ -665,15 +671,12 @@ class DesertRush(ov.BaseGame):
         elif key in ('W', 'SPACE', 'UP_ARROW'):
             if not repeat and p.y <= 0:
                 p.vy = JUMP_V
-        elif key == 'J':
-            self._fire()
+        elif key in ('J', 'F'):
+            if not repeat:
+                self._toggle_fire()
         elif key == 'G':
             if not repeat:
                 self._throw()
-        elif key == 'F':
-            if not repeat:
-                self.autofire = not self.autofire
-                self.msg, self.msg_t = "Auto-fire %s" % ("ON" if self.autofire else "OFF"), 0.9
 
     # ----------------------------------------------------------------- layout
     def layout(self, view):
@@ -1024,7 +1027,8 @@ class DesertRush(ov.BaseGame):
         w = WEAPONS[p.weapon]
         self._text(c, "%s%s" % (w['name'], "" if p.weapon == 'pistol' else "  %d" % p.ammo), 14, 332, 11, ov.C_WHITE, 'left')
         self._text(c, "GRENADES %d" % p.gren, 14, 316, 10, (0.6, 0.9, 0.55, 1), 'left')
-        self._text(c, "AUTO-FIRE %s (F)" % ("ON" if self.autofire else "OFF"), 14, 300, 9, ov.C_TEXT, 'left')
+        self._text(c, "FIRE %s  (click / J)" % ("ON" if self.firing else "OFF"), 14, 300, 9.5,
+                   (1.0, 0.55, 0.35, 1.0) if self.firing else ov.C_TEXT, 'left')
         # mission progress
         prog = min(1.0, self.p.x / (LEVEL_LEN - 300))
         self._rect(c, W - 168, 382, 154, 8, (0, 0, 0, 0.5))
@@ -1040,8 +1044,10 @@ class DesertRush(ov.BaseGame):
             self._text(c, self.msg, W / 2, 262, 24 if "COMPLETE" not in self.msg else 34, ov.alpha(ov.C_GOLD, min(1.0, self.msg_t * 1.5)))
         # crosshair
         mx, my = self.mouse
-        c.ring(self.fx0 + mx * self.sc, self.fy0 + my * self.sc, 8 * self.sc, 1.6 * self.sc + 0.5, (1, 1, 1, 0.8), 16)
-        c.circle(self.fx0 + mx * self.sc, self.fy0 + my * self.sc, 1.6 * self.sc, (1, 0.3, 0.3, 1), 6)
+        ring_col = (1.0, 0.45, 0.35, 0.95) if self.firing else (1, 1, 1, 0.8)      # red while firing
+        c.ring(self.fx0 + mx * self.sc, self.fy0 + my * self.sc, 8 * self.sc, 1.6 * self.sc + 0.5, ring_col, 16)
+        c.circle(self.fx0 + mx * self.sc, self.fy0 + my * self.sc, 1.6 * self.sc,
+                 (1, 0.3, 0.3, 1) if self.firing else (0.7, 0.7, 0.75, 1), 6)
 
     def _soldier_icon(self, c, x, y):
         s = self.sc
@@ -1072,7 +1078,7 @@ class DesertRush(ov.BaseGame):
                 self._text(c, "Fastest clear  %s" % _fmt(bt), x - self.cam + w - 14, y + 22, 12, ov.C_GOLD, 'right')
             else:
                 self._text(c, "Not cleared yet", x - self.cam + w - 14, y + h - 26, 12, ov.C_TEXT, 'right')
-        self._text(c, "A/D run   SPACE jump   mouse aim   click shoot   G / right-click grenade", W / 2, 34, 11, ov.C_WHITE)
+        self._text(c, "A/D run   SPACE jump   mouse aim   click / J start-stop firing   G / right-click grenade", W / 2, 34, 11, ov.C_WHITE)
 
     def draw(self, c):
         self._sx = self._sy = 0.0
@@ -1115,12 +1121,12 @@ class DesertRush(ov.BaseGame):
             self._text(c, "Prisoners %d   Kills %d" % (self.pow_saved, self.kills), W / 2, 170, 12, ov.C_TEXT)
             self._text(c, "SPACE / click: play again     M: difficulty", W / 2, 128, 12, ov.C_TEXT)
         self._sx, self._sy = sx_, sy_
-        self.draw_hint(c, "A/D run  SPACE jump  mouse aim  click/J shoot  G grenade  F auto-fire  M menu")
+        self.draw_hint(c, "A/D run  SPACE jump  mouse aim  click / J: fire on/off  G grenade  M menu")
 
 
 RUNNER = ov.Runner("desertrush", GAME_NAME, DesertRush, [
     "A / D (hold): run    SPACE / W: jump",
-    "Mouse: aim    click / J: shoot (F: auto-fire)",
+    "Mouse: aim    click / J: start / stop firing",
     "G / right click: grenade",
     "Free the POWs, grab H / S / G crates",
     "Beat the gunship at the end of the level",

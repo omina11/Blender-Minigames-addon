@@ -1,6 +1,6 @@
 """Pocket Pet - a tamagotchi-style virtual pet (GPU overlay).
 
-Hatch an egg and look after it: feed it, play with it, clean up after it, put it
+Hatch an egg (tap it 3 times, or just wait 3 seconds) and look after it: feed it, play with it, clean up after it, put it
 to bed (lights off) and give it medicine when it is sick. The way you care for it
 decides how it grows up. The pet is SAVED between sessions: while the game is
 closed time keeps passing (gently - it cannot die while you are away).
@@ -60,7 +60,8 @@ def _new_state(mode='fast', theme_owned=None, coins=0):
                 poops=0, sick=False, asleep=False, coins=coins, treats=1, meds=1, form='ok',
                 care_sum=0.0, care_t=0.0, alive=True, retired=False, mode=mode, theme=0,
                 owned=list(theme_owned or [0]), hue=random.random(), poop_t=random.uniform(2, 5),
-                snacks=0.0, result=None, born_pet_day=0.0, mini={'catch': 0, 'tap': 0}, hatch_msg=False)
+                snacks=0.0, result=None, born_pet_day=0.0, mini={'catch': 0, 'tap': 0}, hatch_msg=False,
+                egg_t=0.0, egg_taps=0)
 
 
 def _lerp(a, b, t):
@@ -73,6 +74,91 @@ def _hsv(h, s, v, a=1.0):
     p, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
     r, g, b = [(v, t, p), (q, v, p), (p, v, t), (p, q, v), (t, p, v), (v, p, q)][i]
     return (r, g, b, a)
+
+
+class ClipCanvas:
+    """Wraps a Canvas and clips everything to the rectangle (x0, y0, w, h) in screen pixels."""
+
+    def __init__(self, c, x0, y0, w, h):
+        self.c, self.x0, self.y0, self.x1, self.y1 = c, x0, y0, x0 + w, y0 + h
+
+    def _clip(self, pts):
+        def run(pl, inside, inter):
+            out = []
+            for i in range(len(pl)):
+                a, b = pl[i], pl[(i + 1) % len(pl)]
+                ia, ib = inside(a), inside(b)
+                if ia != ib:
+                    out.append(inter(a, b))
+                if ib:
+                    out.append(b)
+            return out
+        X0, X1, Y0, Y1 = self.x0, self.x1, self.y0, self.y1
+        ix = lambda xv: (lambda a, b: (xv, a[1] + (b[1] - a[1]) * (xv - a[0]) / ((b[0] - a[0]) or 1e-9)))
+        iy = lambda yv: (lambda a, b: (a[0] + (b[0] - a[0]) * (yv - a[1]) / ((b[1] - a[1]) or 1e-9), yv))
+        pl = list(pts)
+        for inside, inter in ((lambda p: p[0] >= X0, ix(X0)), (lambda p: p[0] <= X1, ix(X1)),
+                              (lambda p: p[1] >= Y0, iy(Y0)), (lambda p: p[1] <= Y1, iy(Y1))):
+            if not pl:
+                return []
+            pl = run(pl, inside, inter)
+        return pl
+
+    def _inside(self, pts):
+        return all(self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1 for x, y in pts)
+
+    def poly(self, pts, col):
+        if self._inside(pts):
+            self.c.poly(pts, col)
+        else:
+            cl = self._clip(pts)
+            if len(cl) >= 3:
+                self.c.poly(cl, col)
+
+    def tri(self, a, b, c_, col):
+        self.poly([a, b, c_], col)
+
+    def rect(self, x, y, w, h, col):
+        x0, y0 = max(x, self.x0), max(y, self.y0)
+        x1, y1 = min(x + w, self.x1), min(y + h, self.y1)
+        if x1 > x0 and y1 > y0:
+            self.c.rect(x0, y0, x1 - x0, y1 - y0, col)
+
+    def circle(self, cx, cy, r, col, seg=24):
+        if cx + r < self.x0 or cx - r > self.x1 or cy + r < self.y0 or cy - r > self.y1:
+            return
+        if cx - r >= self.x0 and cx + r <= self.x1 and cy - r >= self.y0 and cy + r <= self.y1:
+            self.c.circle(cx, cy, r, col, seg)
+            return
+        n = max(12, seg)
+        self.poly([(cx + r * math.cos(2 * math.pi * k / n), cy + r * math.sin(2 * math.pi * k / n)) for k in range(n)], col)
+
+    def ring(self, cx, cy, r, th, col, seg=28):
+        ro = r + th / 2
+        if cx + ro < self.x0 or cx - ro > self.x1 or cy + ro < self.y0 or cy - ro > self.y1:
+            return
+        if cx - ro >= self.x0 and cx + ro <= self.x1 and cy - ro >= self.y0 and cy + ro <= self.y1:
+            self.c.ring(cx, cy, r, th, col, seg)
+            return
+        ri, n = max(0.0, r - th / 2), max(16, seg)
+        for i in range(n):
+            a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+            self.poly([(cx + ro * math.cos(a0), cy + ro * math.sin(a0)), (cx + ro * math.cos(a1), cy + ro * math.sin(a1)),
+                       (cx + ri * math.cos(a1), cy + ri * math.sin(a1)), (cx + ri * math.cos(a0), cy + ri * math.sin(a0))], col)
+
+    def line(self, p, q, w, col):
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        ln = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / ln * w / 2, dx / ln * w / 2
+        self.poly([(p[0] + nx, p[1] + ny), (p[0] - nx, p[1] - ny), (q[0] - nx, q[1] - ny), (q[0] + nx, q[1] + ny)], col)
+
+    def polyline(self, pts, w, col):
+        for a, b in zip(pts, pts[1:]):
+            self.line(a, b, w, col)
+
+    def text(self, s, x, y, size, col=(1, 1, 1, 1), align='center'):
+        if self.x0 - 40 <= x <= self.x1 + 40 and self.y0 - 10 <= y <= self.y1 + 10:
+            self.c.text(s, x, y, size, col, align)
 
 
 class PocketPet(ov.BaseGame):
@@ -92,7 +178,7 @@ class PocketPet(ov.BaseGame):
         self.confirm_new = 0.0
         self.autosave_t = 0.0
         self.anim = dict(x=250.0, tx=250.0, face=1, wait=1.0, blink=2.0, bounce=0.0, eat=0.0, play=0.0, happy_fx=0.0,
-                         food=None, poof=0.0, evolve=0.0)
+                         food=None, poof=0.0, evolve=0.0, shake=0.0)
         self.hearts = []
         self.mgr_cache = {}
         self.mini = None
@@ -134,7 +220,7 @@ class PocketPet(ov.BaseGame):
         if not s or not s['alive'] or s['retired']:
             return
         away = max(0.0, time.time() - s['last'])
-        if away < 20:
+        if away < 120:
             return
         hours = min(MAX_OFFLINE_H, away / DAY_SECONDS[s['mode']] * 24.0) * 0.6
         if hours <= 0.02:
@@ -261,6 +347,8 @@ class PocketPet(ov.BaseGame):
             s['health'] -= 2.0 * h
         if not s['sick'] and s['hunger'] > 40 and s['energy'] > 30:
             s['health'] += 1.5 * h
+        if offline:                                          # a pet never dies while you are away
+            s['health'] = max(s['health'], 30.0)
         for k in ('hunger', 'happy', 'energy', 'health'):
             s[k] = _clamp(s[k])
         if s['asleep'] and s['energy'] >= 99.0:
@@ -281,6 +369,32 @@ class PocketPet(ov.BaseGame):
             self._record_win('life', s['result'])
 
     # ---------------------------------------------------------------- actions
+    EGG_TAPS = 3
+    EGG_SECONDS = 3.0
+
+    def _egg_progress(self):
+        s = self.s
+        return min(1.0, max(s['egg_taps'] / float(self.EGG_TAPS), s['egg_t'] / self.EGG_SECONDS))
+
+    def _hatch(self):
+        s = self.s
+        s['age'] = max(s['age'], 0.04)
+        s['egg_t'], s['egg_taps'] = 0.0, 0
+        self.anim['evolve'] = 1.2
+        self.anim['happy_fx'] = 1.5
+        self._say("%s hatched!" % s['name'], 3.0)
+        self.save()
+
+    def _tap_egg(self):
+        s = self.s
+        s['egg_taps'] += 1
+        self.anim['shake'] = 0.35
+        self.hearts.append([self.anim['x'] + random.uniform(-14, 14), 150, 0.0])
+        if s['egg_taps'] >= self.EGG_TAPS:
+            self._hatch()
+        else:
+            self._say("Crack! %d more tap%s" % (self.EGG_TAPS - s['egg_taps'], "" if self.EGG_TAPS - s['egg_taps'] == 1 else "s"), 1.2)
+
     def _need_awake(self):
         if self.s['asleep']:
             self._say("Shh... %s is sleeping" % self.s['name'])
@@ -292,7 +406,7 @@ class PocketPet(ov.BaseGame):
         if not s or not s['alive'] or s['retired']:
             return False
         if self.stage() == 'egg':
-            self._say("The egg is warm - wait for it to hatch")
+            self._say("Tap the egg to hatch it!")
             return False
         return True
 
@@ -436,7 +550,7 @@ class PocketPet(ov.BaseGame):
         self.view = 'home'
         self.popup = None
         self.anim.update(x=W / 2 - 40, tx=W / 2 - 40)
-        self._say("A new egg! Keep it warm", 3.0)
+        self._say("A new egg! Tap it 3 times (or wait 3 seconds)", 3.0)
         self.save()
 
     # ----------------------------------------------------------------- update
@@ -446,8 +560,12 @@ class PocketPet(ov.BaseGame):
         self.msg_t = max(0.0, self.msg_t - dt)
         self.confirm_new = max(0.0, self.confirm_new - dt)
         a = self.anim
-        for k in ('eat', 'happy_fx', 'poof', 'evolve'):
+        for k in ('eat', 'happy_fx', 'poof', 'evolve', 'shake'):
             a[k] = max(0.0, a[k] - dt)
+        if self.view == 'home' and self.s and self.s['alive'] and not self.s['retired'] and self.stage() == 'egg':
+            self.s['egg_t'] += dt                          # the egg hatches by itself after 3 seconds
+            if self.s['egg_t'] >= self.EGG_SECONDS:
+                self._hatch()
         self.hearts = [[x, y + 26 * dt, t + dt] for x, y, t in self.hearts if t < 1.4]
         if self.view in ('home', 'menu') and self.s and self.s['alive'] and not self.s['retired']:
             hours = dt * 24.0 / DAY_SECONDS[self.s['mode']]
@@ -659,9 +777,13 @@ class PocketPet(ov.BaseGame):
                 self._press_btn(name)
                 return
         self.popup = None
-        # petting: click the pet
+        # tapping the egg
         s = self.s
         a = self.anim
+        if s and s['alive'] and not s['retired'] and self.stage() == 'egg' and abs(mx - a['x']) < 60 and 90 < my < 240:
+            self._tap_egg()
+            return
+        # petting: click the pet
         if s and s['alive'] and not s['asleep'] and not s['retired'] and abs(mx - a['x']) < 40 and 100 < my < 230:
             s['happy'] = _clamp(s['happy'] + 1.5)
             self.hearts.append([a['x'] + random.uniform(-14, 14), 150, 0.0])
@@ -717,7 +839,10 @@ class PocketPet(ov.BaseGame):
             return
         if self.s is None:
             return
-        if key == 'F':
+        if key == 'SPACE':
+            if self.s['alive'] and not self.s['retired'] and self.stage() == 'egg':
+                self._tap_egg()
+        elif key == 'F':
             self._press_btn('feed')
         elif key == 'P':
             self._press_btn('play')
@@ -890,7 +1015,9 @@ class PocketPet(ov.BaseGame):
         # shadow
         self._poly(c, self._oval(x, y_ground - 2, size * 0.9, size * 0.18, 18), (0, 0, 0, 0.22 - min(0.12, hop * 0.01)))
         if st == 'egg':
-            wob = math.sin(self.time * 6) * 0.08 * (1 if self.s['age'] > 0.03 else 0.0)
+            prog = self._egg_progress()
+            wob = math.sin(self.time * (8 + 14 * prog)) * (0.04 + 0.10 * prog) + math.sin(self.time * 40) * 0.10 * a['shake']
+            cx += math.sin(self.time * 55) * 3.0 * a['shake']
             pts = self._oval(cx, cy + 4, size * 0.78, size * 1.05, 22, rot=wob)
             self._poly(c, pts, (0.30, 0.25, 0.28, 1))
             self._poly(c, self._oval(cx, cy + 4, size * 0.72, size * 0.99, 22, rot=wob), (0.97, 0.95, 0.88, 1))
@@ -898,8 +1025,15 @@ class PocketPet(ov.BaseGame):
                 ang = k * 1.26 + 0.4
                 self._circ(c, cx + math.cos(ang) * size * 0.4, cy + 4 + math.sin(ang) * size * 0.55, size * 0.13,
                            _hsv(s['hue'], 0.45, 0.95), 8)
-            if s['age'] > 0.025:
-                self._line(c, (cx - size * 0.3, cy + size * 0.5), (cx - size * 0.1, cy + size * 0.2), 2, (0.3, 0.25, 0.25, 1))
+            cracks = [[(cx - size * 0.45, cy + size * 0.45), (cx - size * 0.25, cy + size * 0.30), (cx - size * 0.32, cy + size * 0.12),
+                       (cx - size * 0.10, cy + size * 0.02)],
+                      [(cx + size * 0.40, cy + size * 0.55), (cx + size * 0.20, cy + size * 0.38), (cx + size * 0.28, cy + size * 0.18)],
+                      [(cx - size * 0.05, cy + size * 0.75), (cx + size * 0.05, cy + size * 0.5), (cx - size * 0.08, cy + size * 0.32),
+                       (cx + size * 0.12, cy + size * 0.12)]]
+            for k, pts in enumerate(cracks):
+                if prog > (k + 0.15) / 3.0:
+                    for q, r2 in zip(pts, pts[1:]):
+                        self._line(c, q, r2, 2.2, (0.28, 0.22, 0.22, 1))
             return
         # ears / antenna / spikes by form (behind the body)
         form = s['form']
@@ -1140,7 +1274,6 @@ class PocketPet(ov.BaseGame):
         self._text(c, "Hatch it. Feed it. Love it.", W / 2, 316, 13, ov.C_TEXT)
         # little preview of the pet
         if s and s['alive'] and not s['retired']:
-            self.anim['x'] = 330
             self._draw_pet(c, 90, 238, 1.0, False)
         for name, bx, by, bw, bh in self._title_btns():
             hov = self.hover == name
@@ -1191,6 +1324,12 @@ class PocketPet(ov.BaseGame):
             self._text(c, "%s has passed away..." % s['name'], W / 2, 280, 24, ov.C_BAD)
             self._text(c, "M: title screen  ->  NEW EGG", W / 2, 244, 12, ov.C_TEXT)
         self._hud(c)
+        if s['alive'] and not s['retired'] and self.stage() == 'egg':
+            prog = self._egg_progress()
+            self._text(c, "TAP THE EGG!  (%d / %d)" % (s['egg_taps'], self.EGG_TAPS), 320, 262,
+                       18 + 2 * math.sin(self.time * 8), (1.0, 0.9, 0.4, 1.0))
+            self._rr(c, 250, 236, 140, 10, 4, (0, 0, 0, 0.5))
+            self._rr(c, 251.5, 237.5, max(6.0, 137 * prog), 7, 3, (1.0, 0.8, 0.3, 1))
         if self.popup:
             self._popup_draw(c)
         if self.msg_t > 0:
@@ -1276,35 +1415,58 @@ class PocketPet(ov.BaseGame):
         self._text(c, "+%d coins    pet is happier" % r['coins'], W / 2, 224, 14, ov.C_GOLD)
         self._text(c, "Click or SPACE to go back", W / 2, 170, 12, ov.C_TEXT)
 
+    # ---- header / hint that shrink to fit the panel width
+    def _fit_text(self, c, text, x, y, size, col):
+        px, _, pw, _ = self.panel
+        est = len(text) * 0.56 * size
+        if est > pw * 0.94:
+            size = size * pw * 0.94 / est
+        c.text(text, x, y, size, col)
+
+    def _fit_header(self, c, main, sub=None, col=ov.C_WHITE):
+        px, _, pw, _ = self.panel
+        u = self.u
+        if sub:
+            self._fit_text(c, main, px + pw / 2, self.hy + 10 * u, 19 * u, col)
+            self._fit_text(c, sub, px + pw / 2, self.hy - 13 * u, 12 * u, ov.C_TEXT)
+        else:
+            self._fit_text(c, main, px + pw / 2, self.hy, 19 * u, col)
+
+    def _fit_hint(self, c, text):
+        px, _, pw, _ = self.panel
+        self._fit_text(c, text, px + pw / 2, self.fy, 11 * self.u, ov.C_TEXT)
+
     def draw(self, c):
-        self.draw_frame(c)
+        raw = c
+        self.draw_frame(raw)
+        c = ClipCanvas(raw, self.fx0, self.fy0, W * self.sc, H * self.sc)
         s = self.s
         if self.view == 'title':
-            self.draw_header(c, "POCKET PET", "A virtual pet that lives while you play - and while you're away", ov.C_GOLD)
+            self._fit_header(raw, "POCKET PET", "A virtual pet that lives while you play - and while you're away", ov.C_GOLD)
             self._title(c)
             if self.msg_t > 0:
                 self._text(c, self.msg, W / 2, 28, 11, ov.C_WHITE)
-            self.draw_hint(c, "Click a button   SPACE continue   ESC quit")
+            self._fit_hint(raw, "Click a button   SPACE continue   ESC quit")
             return
         if self.view == 'catch':
-            self.draw_header(c, "FRUIT CATCH", "Best %d" % self.s['mini']['catch'], ov.C_GOLD)
+            self._fit_header(raw, "FRUIT CATCH", "Best %d" % self.s['mini']['catch'], ov.C_GOLD)
             self._catch(c)
             if self.mini['over']:
                 self._mini_result(c)
-            self.draw_hint(c, "Mouse or arrow keys: move the basket   M: title")
+            self._fit_hint(raw, "Mouse or arrow keys: move the basket   M: title")
             return
         if self.view == 'tap':
-            self.draw_header(c, "REFLEX TAP", "Best %d" % self.s['mini']['tap'], ov.C_GOLD)
+            self._fit_header(raw, "REFLEX TAP", "Best %d" % self.s['mini']['tap'], ov.C_GOLD)
             self._tap(c)
             if self.mini['over']:
                 self._mini_result(c)
-            self.draw_hint(c, "Click the targets before they shrink   M: title")
+            self._fit_hint(raw, "Click the targets before they shrink   M: title")
             return
-        self.draw_header(c, "POCKET PET - %s" % s['name'],
+        self._fit_header(raw, "POCKET PET - %s" % s['name'],
                          "%s%s   |   Best care score %d" % (self.stage().capitalize(), "  (asleep)" if s['asleep'] else "", self._best('life')),
                          ov.C_GOLD)
         self._home(c)
-        self.draw_hint(c, "F feed  P play  L lights  C clean  H heal  S shop   click the pet to pet it   M title")
+        self._fit_hint(raw, "F feed  P play  L lights  C clean  H heal  S shop   click the pet to pet it   M title")
 
 
 class _PetRunner(ov.Runner):

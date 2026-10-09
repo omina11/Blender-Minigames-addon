@@ -27,6 +27,7 @@ PR, BR = 22.0, 10.0                         # paddle / puck radius
 WIN_GOALS = 7
 MAX_PUCK = 1100.0
 MIN_HIT = 210.0
+ICE_SLIDE = 0.25                            # 0 = fully responsive mouse, 1 = old slippery feel
 
 DIFFS = [
     dict(name="Easy", info="Slow, sloppy rival - learn how the ice feels",
@@ -176,20 +177,20 @@ class IcePong(ov.BaseGame):
             traceback.print_exc()
 
     # ---------------------------------------------------------------- physics
-    def _move_paddle(self, p, tx, ty, dt, vmax=None, acc=None):
+    def _move_paddle(self, p, tx, ty, dt, vmax=None, acc=None, gain=7.0, brake_mul=0.8):
         vmax = vmax or p.vmax
         acc = acc or p.acc
         x0, x1, y0, y1 = p.bounds()
         tx, ty = _clamp(tx, x0, x1), _clamp(ty, y0, y1)
         dx, dy = tx - p.x, ty - p.y
         d = math.hypot(dx, dy)
-        spd = min(vmax, d * 7.0)
+        spd = min(vmax, d * gain)
         dvx, dvy = (dx / d * spd, dy / d * spd) if d > 1e-6 else (0.0, 0.0)
         # ice: slow acceleration, even slower braking
         ex, ey = dvx - p.vx, dvy - p.vy
         e = math.hypot(ex, ey)
         brake = (p.vx * ex + p.vy * ey) < 0
-        a = acc * (0.8 if brake else 1.0) * dt
+        a = acc * (brake_mul if brake else 1.0) * dt
         if e > a:
             ex, ey = ex / e * a, ey / e * a
         p.vx += ex
@@ -431,10 +432,16 @@ class IcePong(ov.BaseGame):
     def _player_step(self, dt):
         p = self.pl
         if self.mouse is not None:
+            # responsive mouse control: the paddle chases the cursor quickly and
+            # brakes just as fast (only a tiny hint of ice inertia is left).
+            # Raise ICE_SLIDE towards 1.0 for a slippier feel, lower it for even more precision.
             tx, ty = self.mouse
+            k = ICE_SLIDE
+            self._move_paddle(p, tx, ty, dt, vmax=1200.0, acc=3000.0 + 9000.0 * (1.0 - k),
+                              gain=10.0 + 10.0 * (1.0 - k), brake_mul=1.0)
         else:
-            tx, ty = p.x, p.y
-        self._move_paddle(p, tx, ty, dt, 700.0)
+            # WASD nudges keep the original slippery behaviour
+            self._move_paddle(p, p.x, p.y, dt, 700.0)
 
     # ------------------------------------------------------------------ input
     def _card(self, i):

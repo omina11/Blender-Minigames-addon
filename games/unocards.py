@@ -1,4 +1,4 @@
-"""Uno Cards - the classic colour-matching card game against 2-3 CPU players (GPU overlay).
+"""GTLP Cards - the classic colour-matching card game against 2-3 CPU players (GPU overlay).
 
 Match the top card by COLOUR or by NUMBER / SYMBOL. Special cards:
     Skip (a circle with a bar)  - the next player loses their turn
@@ -10,9 +10,9 @@ Can't play? Draw a card (click the deck or press SPACE): if it fits you may play
 otherwise the turn passes. First to empty their hand wins.
 
 Difficulties: Easy (2 opponents, random CPU), Medium (3 opponents, smarter CPU),
-Hard (3 opponents, tactical CPU and you MUST press UNO (U) before playing your
+Hard (3 opponents, tactical CPU and you MUST press GTLP (G) before playing your
 second-last card or you draw 2). Best score and fastest win saved per difficulty
-(uno_easy / uno_medium / uno_hard).
+(gtlp_easy / gtlp_medium / gtlp_hard).
 """
 
 import math
@@ -22,20 +22,25 @@ import traceback
 from . import _overlay as ov
 from . import _record as _rec
 
-GAME_NAME = "Uno Cards"
+GAME_NAME = "GTLP Cards"
 GAME_ICON = 'COLOR'
 
 W, H = 720.0, 480.0
 CW, CH = 62.0, 92.0
+PILE_Y = 204.0                               # bottom of the two centre piles
+DRAW_X = W / 2 - 4.0 - CW                     # draw pile (left of centre)
+DISC_X = W / 2 + 4.0                          # discard pile (right of centre)
+CENTER = (W / 2, PILE_Y + CH / 2)             # centre of the colour ring
+RING_R = 90.0                                 # colour ring: contains both piles and their labels
 
 COLORS = {'R': (0.90, 0.20, 0.22, 1.0), 'Y': (0.98, 0.78, 0.15, 1.0), 'G': (0.20, 0.68, 0.34, 1.0), 'B': (0.20, 0.42, 0.88, 1.0)}
 ORDER = ('R', 'Y', 'G', 'B')
 COLOR_NAME = {'R': "red", 'Y': "yellow", 'G': "green", 'B': "blue"}
 
 DIFFS = [
-    dict(name="Easy", info="2 opponents - the CPU plays at random", n=3, level=0, uno_call=False, mult=1.0, col=(0.45, 0.85, 0.45)),
-    dict(name="Medium", info="3 opponents - the CPU plays with a plan", n=4, level=1, uno_call=False, mult=1.5, col=(1.0, 0.65, 0.25)),
-    dict(name="Hard", info="3 opponents - tactical CPU, you must call UNO", n=4, level=2, uno_call=True, mult=2.0, col=(0.95, 0.30, 0.30)),
+    dict(name="Easy", info="2 opponents - the CPU plays at random", n=3, level=0, gtlp_call=False, mult=1.0, col=(0.45, 0.85, 0.45)),
+    dict(name="Medium", info="3 opponents - the CPU plays with a plan", n=4, level=1, gtlp_call=False, mult=1.5, col=(1.0, 0.65, 0.25)),
+    dict(name="Hard", info="3 opponents - tactical CPU, you must call GTLP", n=4, level=2, gtlp_call=True, mult=2.0, col=(0.95, 0.30, 0.30)),
 ]
 DIGITS = {'ONE': 0, 'TWO': 1, 'THREE': 2, 'FOUR': 3, 'NUMPAD_1': 0, 'NUMPAD_2': 1, 'NUMPAD_3': 2, 'NUMPAD_4': 3}
 NAMES = ("You", "Ada", "Bob", "Cleo")
@@ -72,8 +77,8 @@ def _value(card):
     return 50 if card[0] == 'W' else 20
 
 
-class UnoCards(ov.BaseGame):
-    keys = ('SPACE', 'U', 'M', 'N', 'ONE', 'TWO', 'THREE', 'FOUR', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4')
+class GtlpCards(ov.BaseGame):
+    keys = ('SPACE', 'G', 'M', 'N', 'ONE', 'TWO', 'THREE', 'FOUR', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4')
 
     # ------------------------------------------------------------------ setup
     def setup(self):
@@ -114,7 +119,7 @@ class UnoCards(ov.BaseGame):
         self.wait = 1.0
         self.drawn = None                      # index of the card just drawn by you (only it may be played)
         self.pending_wild = None
-        self.uno_called = False
+        self.gtlp_called = False
         self.msg, self.msg_t = "", 0.0
         self.log = []
         self.anims = []
@@ -138,7 +143,7 @@ class UnoCards(ov.BaseGame):
     def _mgr(self, d):
         if d not in self.record_mgrs:
             try:
-                self.record_mgrs[d] = _rec.RecordManager(game_name="uno_" + DIFFS[d]['name'].lower())
+                self.record_mgrs[d] = _rec.RecordManager(game_name="gtlp_" + DIFFS[d]['name'].lower())
             except Exception:
                 self.record_mgrs[d] = None
         return self.record_mgrs[d]
@@ -262,9 +267,9 @@ class UnoCards(ov.BaseGame):
             self._finish(p)
             return
         if len(self.hands[p]) == 1 and p != 0:
-            self.say("%s: UNO!" % NAMES[p])
+            self.say("%s: GTLP!" % NAMES[p])
         self.wait = 0.9
-        self.uno_called = False
+        self.gtlp_called = False
 
     @staticmethod
     def _cname(card):
@@ -362,7 +367,7 @@ class UnoCards(ov.BaseGame):
         return (x - self.fx0) / self.sc, (y - self.fy0) / self.sc
 
     def _card_menu(self, i):
-        return 130.0, 262.0 - i * 92.0, 460.0, 80.0
+        return 130.0, 212.0 - i * 92.0, 460.0, 80.0
 
     def _menu_idx(self, x, y):
         lx, ly = self._logical(x, y)
@@ -391,9 +396,9 @@ class UnoCards(ov.BaseGame):
         return -1
 
     def _deck_rect(self):
-        return W / 2 - 78.0, 214.0, CW, CH
+        return DRAW_X, PILE_Y, CW, CH
 
-    def _uno_rect(self):
+    def _gtlp_rect(self):
         return W - 150.0, 150.0, 110.0, 36.0
 
     def _pick_rects(self):
@@ -451,9 +456,9 @@ class UnoCards(ov.BaseGame):
         if not self._playable(card):
             self.say("That card doesn't match")
             return
-        if len(self.hands[0]) == 2 and self.cfg['uno_call'] and not self.uno_called:
+        if len(self.hands[0]) == 2 and self.cfg['gtlp_call'] and not self.gtlp_called:
             self._draw_cards(0, 2)
-            self.say("You forgot to call UNO!  +2 cards")
+            self.say("You forgot to call GTLP!  +2 cards")
             self.turn = self._next(0)
             self.wait = 0.9
             self.drawn = None
@@ -494,18 +499,18 @@ class UnoCards(ov.BaseGame):
         if dx <= lx <= dx + dw and dy <= ly <= dy + dh:
             self._human_draw()
             return
-        ux, uy, uw, uh = self._uno_rect()
-        if self.cfg['uno_call'] and ux <= lx <= ux + uw and uy <= ly <= uy + uh:
-            self._call_uno()
+        ux, uy, uw, uh = self._gtlp_rect()
+        if self.cfg['gtlp_call'] and ux <= lx <= ux + uw and uy <= ly <= uy + uh:
+            self._call_gtlp()
             return
         i = self._hand_hit(lx, ly)
         if i >= 0:
             self._human_play(i)
 
-    def _call_uno(self):
+    def _call_gtlp(self):
         if len(self.hands[0]) == 2 and self.turn == 0:
-            self.uno_called = True
-            self.say("UNO!")
+            self.gtlp_called = True
+            self.say("GTLP!")
 
     def key(self, key, repeat):
         if self.menu:
@@ -526,8 +531,8 @@ class UnoCards(ov.BaseGame):
         elif self.phase == 'play':
             if key == 'SPACE':
                 self._human_draw()
-            elif key == 'U' and self.cfg['uno_call']:
-                self._call_uno()
+            elif key == 'G' and self.cfg['gtlp_call']:
+                self._call_gtlp()
         elif self.phase == 'over' and key == 'SPACE':
             self._deal()
 
@@ -621,7 +626,7 @@ class UnoCards(ov.BaseGame):
         self._rr(c, x + 3 * s, y + 3 * s, w - 6 * s, h - 6 * s, 5 * s, (0.10, 0.10, 0.14, 1))
         self._poly(c, self._oval(x + w / 2, y + h / 2, w * 0.40, h * 0.28, math.radians(-24)), (0.88, 0.18, 0.2, 1))
         if w > 40:
-            self._text(c, "UNO", x + w / 2, y + h / 2, 13 * s, (1.0, 0.9, 0.2, 1))
+            self._text(c, "GTLP", x + w / 2, y + h / 2, 13 * s, (1.0, 0.9, 0.2, 1))
 
     def _seat(self, p):
         n = self.n
@@ -629,13 +634,12 @@ class UnoCards(ov.BaseGame):
             return None
         if n == 3:
             return ((170.0, 392.0), (550.0, 392.0))[p - 1]
-        return ((80.0, 255.0), (W / 2, 408.0), (W - 80.0, 255.0))[p - 1]
+        return ((80.0, 255.0), (W / 2, 420.0), (W - 80.0, 255.0))[p - 1]
 
     def _table(self, c):
         self._rect(c, 0, 0, W, H, (0.10, 0.30, 0.22, 1))
-        for k in range(8):
-            self._circ(c, W / 2, H / 2 + 6, 380 - k * 42, (1, 1, 1, 0.022), 48)
-        c.ring(self._X(W / 2), self._Y(H / 2 + 6), 150 * self.sc, 3 * self.sc, (1, 1, 1, 0.10), 48)
+        for k in range(8):                                     # concentric glow, kept INSIDE the panel
+            self._circ(c, W / 2, H / 2, 232 - k * 28, (1, 1, 1, 0.022), 48)
 
     def _opponent(self, c, p):
         sx, sy = self._seat(p)
@@ -654,17 +658,16 @@ class UnoCards(ov.BaseGame):
         self._rr(c, sx - 45, sy - 44, 90, 22, 10, (0, 0, 0, 0.55))
         self._text(c, "%s  %d" % (NAMES[p], n), sx, sy - 33, 11, (1.0, 0.9, 0.4, 1) if active else ov.C_WHITE)
         if n == 1:
-            self._text(c, "UNO!", sx, sy + 48, 12, (1.0, 0.85, 0.2, 1))
+            self._text(c, "GTLP!", sx, sy + 48, 12, (1.0, 0.85, 0.2, 1))
 
     def _menu(self, c):
         self._table(c)
-        self._text(c, "UNO CARDS", W / 2, 424, 46, (1.0, 0.85 + 0.1 * math.sin(self.time * 2), 0.25, 1))
+        self._text(c, "GTLP CARDS", W / 2, 442, 46, (1.0, 0.85 + 0.1 * math.sin(self.time * 2), 0.25, 1))
         for i, card in enumerate((('R', '7'), ('Y', 'S'), ('G', 'D'), ('B', 'V'), ('W', 'F'))):
-            self._card_face(c, card, W / 2 - 170 + i * 72, 330 + 4 * math.sin(self.time * 2 + i), 62, 92)
-        self._text(c, "Match colours or numbers - empty your hand first", W / 2, 308, 13, (1, 1, 1, 0.75))
+            self._card_face(c, card, W / 2 - 170 + i * 72, 322 + 4 * math.sin(self.time * 2 + i), 62, 92)
+        self._text(c, "Match colours or numbers - empty your hand first", W / 2, 303, 13, (1, 1, 1, 0.75))
         for i, d in enumerate(DIFFS):
             x, y, w, h = self._card_menu(i)
-            y -= 50
             hov = i == self.menu_hover
             self._rect(c, x + 3, y - 4, w, h, (0, 0, 0, 0.4))
             self._rect(c, x, y, w, h, ov.C_CELL_HOVER if hov else ov.C_CELL)
@@ -682,35 +685,39 @@ class UnoCards(ov.BaseGame):
         self.draw_frame(c)
         bs, bt = self._best(self.diff)
         if self.menu:
-            self.draw_header(c, "UNO CARDS", "Best score and fastest win saved for every difficulty", ov.C_GOLD)
+            self.draw_header(c, "GTLP CARDS", "Best score and fastest win saved for every difficulty", ov.C_GOLD)
             self._menu(c)
             self.draw_hint(c, "Click or press 1-3 to pick a difficulty   ESC quit")
             return
         who = "your turn" if self.turn == 0 else "%s is playing" % NAMES[self.turn]
-        self.draw_header(c, "UNO CARDS - %s" % self.cfg['name'],
+        self.draw_header(c, "GTLP CARDS - %s" % self.cfg['name'],
                          "%s   |   Time %s   |   Best %d (%s)" % (who if self.phase != 'over' else "game over",
                                                                   _fmt(self.play_t), bs, _fmt(bt)),
                          tuple(self.cfg['col']) + (1.0,))
         self._table(c)
         for p in range(1, self.n):
             self._opponent(c, p)
-        # centre: colour ring, draw pile, discard pile
+        # centre: colour ring with the two piles inside it (nothing overlaps)
         cc = COLORS[self.color]
-        self._circ(c, W / 2 + 30, 262, 74, (cc[0], cc[1], cc[2], 0.22), 36)
-        c.ring(self._X(W / 2 + 30), self._Y(262), 74 * self.sc, 4 * self.sc, (cc[0], cc[1], cc[2], 0.9), 40)
+        ccx, ccy = CENTER
+        self._circ(c, ccx, ccy, RING_R, (cc[0], cc[1], cc[2], 0.22), 40)
+        c.ring(self._X(ccx), self._Y(ccy), RING_R * self.sc, 4 * self.sc, (cc[0], cc[1], cc[2], 0.9), 48)
         dx, dy, dw, dh = self._deck_rect()
         for k in range(3):
             self._card_back(c, dx - k * 1.4, dy + k * 1.4)
-        self._text(c, "%d" % len(self.pile), dx + dw / 2, dy - 10, 10, (1, 1, 1, 0.7))
+        self._rr(c, dx + dw / 2 - 15, dy - 25, 30, 16, 7, (0, 0, 0, 0.55))      # pile counter pill
+        self._text(c, "%d" % len(self.pile), dx + dw / 2, dy - 17, 10, ov.C_WHITE)
         if self.turn == 0 and self.phase == 'play':
             self._text(c, "DRAW" if self.drawn is None else "PASS", dx + dw / 2, dy + dh + 12, 10, ov.C_GOLD)
-        for k, card in enumerate(self.disc[-3:]):
-            self._card_face(c, card, W / 2 + 6 + k * 7, 216 + (k - 2) * 1.0 * 0, CW, CH)
-        # direction arrows
+        top3 = self.disc[-3:]
+        for k, card in enumerate(top3):
+            depth = len(top3) - 1 - k                                           # top card = 0
+            self._card_face(c, card, DISC_X - depth * 2.5, PILE_Y + depth * 2.0, CW, CH)
+        # direction arrows (they travel along the colour ring, outside the cards)
         for sg in (-1, 1):
             a = self.time * 1.2 * self.dir + (0 if sg > 0 else math.pi)
-            r = 96
-            px, py = W / 2 + 30 + math.cos(a) * r, 262 + math.sin(a) * r
+            r = RING_R
+            px, py = ccx + math.cos(a) * r, ccy + math.sin(a) * r
             ta = a + math.pi / 2 * self.dir
             self._poly(c, [(px + math.cos(ta) * 8, py + math.sin(ta) * 8),
                            (px + math.cos(ta + 2.5) * 6, py + math.sin(ta + 2.5) * 6),
@@ -721,8 +728,8 @@ class UnoCards(ov.BaseGame):
             e = k * k * (3 - 2 * k)
             if a['kind'] == 'play' and a['p'] != 0:
                 sx, sy = self._seat(a['p'])
-                x = sx + (W / 2 + 6 - sx) * e - CW / 2 * (1 - e) * 0
-                y = sy + (216 + CH / 2 - sy) * e
+                x = sx + (DISC_X + CW / 2 - sx) * e
+                y = sy + (PILE_Y + CH / 2 - sy) * e
                 self._card_face(c, a['card'], x - CW / 2 * (0.55 + 0.45 * e), y - CH / 2 * (0.55 + 0.45 * e),
                                 CW * (0.55 + 0.45 * e), CH * (0.55 + 0.45 * e))
             elif a['kind'] == 'draw' and a['p'] != 0:
@@ -739,16 +746,16 @@ class UnoCards(ov.BaseGame):
             lift = 16.0 if hov else (6.0 if ok and self.turn == 0 else 0.0)
             glow = (1.0, 0.9, 0.3, 0.9) if (hov or (self.drawn is not None and i == self.drawn)) else None
             self._card_face(c, card, x0 + i * step, 8 + lift, CW, CH, dim=not ok and self.turn == 0 and self.phase in ('play', 'color'), glow=glow)
-        self._rr(c, W / 2 - 40, 108, 80, 20, 9, (0, 0, 0, 0.5))
-        self._text(c, "You  %d" % n, W / 2, 118, 10.5, (1.0, 0.9, 0.4, 1) if self.turn == 0 and self.phase == 'play' else ov.C_WHITE)
-        if self.cfg['uno_call'] and self.turn == 0 and n == 2 and self.phase == 'play':
-            ux, uy, uw, uh = self._uno_rect()
-            self._rr(c, ux, uy, uw, uh, 10, (0.95, 0.25 + 0.4 * (1 if self.uno_called else abs(math.sin(self.time * 6))), 0.2, 1))
-            self._text(c, "UNO! (U)" if not self.uno_called else "UNO called", ux + uw / 2, uy + uh / 2, 13, (1, 1, 1, 1))
+        self._rr(c, W / 2 - 40, 124, 80, 20, 9, (0, 0, 0, 0.5))
+        self._text(c, "You  %d" % n, W / 2, 134, 10.5, (1.0, 0.9, 0.4, 1) if self.turn == 0 and self.phase == 'play' else ov.C_WHITE)
+        if self.cfg['gtlp_call'] and self.turn == 0 and n == 2 and self.phase == 'play':
+            ux, uy, uw, uh = self._gtlp_rect()
+            self._rr(c, ux, uy, uw, uh, 10, (0.95, 0.25 + 0.4 * (1 if self.gtlp_called else abs(math.sin(self.time * 6))), 0.2, 1))
+            self._text(c, "GTLP! (G)" if not self.gtlp_called else "GTLP called", ux + uw / 2, uy + uh / 2, 13, (1, 1, 1, 1))
         # toast
         if self.msg_t > 0:
-            self._rr(c, W / 2 - 190, 430 if self.n == 3 else 388, 380, 24, 10, (0, 0, 0, 0.55 * min(1.0, self.msg_t * 2)))
-            self._text(c, self.msg, W / 2, 442 if self.n == 3 else 400, 12, ov.alpha(ov.C_WHITE, min(1.0, self.msg_t * 2)))
+            self._rr(c, W / 2 - 190, 346, 380, 24, 10, (0, 0, 0, 0.55 * min(1.0, self.msg_t * 2)))
+            self._text(c, self.msg, W / 2, 358, 12, ov.alpha(ov.C_WHITE, min(1.0, self.msg_t * 2)))
         if self.phase == 'color':
             self._rect(c, 0, 0, W, H, (0, 0, 0, 0.55))
             self._text(c, "CHOOSE A COLOUR", W / 2, 290, 22, ov.C_WHITE)
@@ -768,17 +775,17 @@ class UnoCards(ov.BaseGame):
             else:
                 self._text(c, "Cards left: " + "  ".join("%s %d" % (NAMES[i], len(h)) for i, h in enumerate(self.hands)), W / 2, 260, 13, ov.C_TEXT)
             self._text(c, "SPACE / click: new game     M: difficulty", W / 2, 180, 13, ov.C_TEXT)
-        if self.cfg['uno_call']:
-            self.draw_hint(c, "Click a card   deck / SPACE: draw or pass   U: call UNO   N new   M menu")
+        if self.cfg['gtlp_call']:
+            self.draw_hint(c, "Click a card   deck / SPACE: draw or pass   G: call GTLP   N new   M menu")
         else:
             self.draw_hint(c, "Click a card   deck / SPACE: draw or pass   N new   M menu   R restart")
 
 
-RUNNER = ov.Runner("unocards", GAME_NAME, UnoCards, [
+RUNNER = ov.Runner("unocards", GAME_NAME, GtlpCards, [
     "Click a card to play it (matching colour or number)",
     "No match? Click the deck / SPACE to draw",
-    "Skip, Reverse, +2, Wild, Wild +4 work as in Uno",
-    "Hard: press U before your second-last card",
+    "Skip, Reverse, +2, Wild, Wild +4 work as in GTLP",
+    "Hard: press G before your second-last card",
     "Best score + fastest win saved per difficulty",
     "M: difficulty   N: new game   ESC: quit",
 ])
