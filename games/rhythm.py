@@ -76,53 +76,7 @@ KEYUP_SEEN = [False]               # becomes True as soon as the runner delivers
 MINOR_PENTA = (0, 3, 5, 7, 10)
 MAJOR_PENTA = (0, 2, 4, 7, 9)
 
-SONGS = [
-    dict(title="Neon Run", bpm=118, root=57, scale=MINOR_PENTA,
-         note="A minor groove",
-         phrases={'A': "3...5..7..5.3...", 'B': "5..7..8.7.5..3..", 'C': "8.7.5.7.8.9.8.5.",
-                  'D': "7...5.3.5...3.2.", 'E': "3.5.7.5.3.5.7.9.", 'F': "9..7.5..7..5.3..",
-                  'G': "5.5.7.5.3.3.5.3.", 'H': "0.2.3.5.7.5.3.2."},
-         form="ABADCECFABGDCEHFABADCEHD",
-         chords=[(0, (0, 3, 7)), (-4, (0, 4, 7)),
-                 (3, (0, 4, 7)), (-2, (0, 4, 7))],
-         kick={0, 4, 8, 12}, kick_odd={10}, snare={4, 12}, hat=set(range(0, 16, 2))),
-    dict(title="Pixel Sunrise", bpm=104, root=60, scale=MAJOR_PENTA,
-         note="Bright and bouncy",
-         phrases={'A': "4...5...7...5.4.", 'B': "5.7.8...7.5.4...", 'C': "2.4.5.4.2.4.5.7.",
-                  'D': "7...8...9.8.7.5.", 'E': "4.4.5.7...7.5.4.", 'F': "9.8.7.5.4.2.0...",
-                  'G': "5...7.5.4...2.4.", 'H': "2.2.4.5.7.5.4.2."},
-         form="ABADEBEFGBGDEBHFABADEBHF",
-         chords=[(0, (0, 4, 7)), (7, (0, 4, 7)),
-                 (9, (0, 3, 7)), (5, (0, 4, 7))],
-         kick={0, 6, 8, 14}, kick_odd={3}, snare={4, 12}, hat=set(range(0, 16, 2))),
-    dict(title="Circuit Breaker", bpm=140, root=52, scale=MINOR_PENTA,
-         note="Fast and busy",
-         phrases={'A': "3.35.57.8.7.5.3.", 'B': "5.57.78.9.8.7.5.", 'C': "8.98.75.7.53.2.3",
-                  'D': "3335.5.7.7.9.8.7", 'E': "0.23.35.57.79.97", 'F': "9.89.87.8.75.53.",
-                  'G': "5.5.5.7.8.8.9.8.", 'H': "7.5.3.5.7.9.8.7."},
-         form="ABACDEDFABACGEGHABACDEDH",
-         chords=[(0, (0, 3, 7)), (-4, (0, 4, 7)),
-                 (-2, (0, 4, 7)), (-5, (0, 3, 7))],
-         kick={0, 3, 8, 11}, kick_odd={6, 14}, snare={4, 12}, hat=set(range(0, 16, 2)) | {15}),
-    dict(title="Midnight Drive", bpm=92, root=55, scale=MINOR_PENTA,
-         note="Laid-back night cruise",
-         phrases={'A': "5...3...5.7.5.3.", 'B': "7...8.7.5...3...", 'C': "3.5.7...5.3.2.3.",
-                  'D': "8...7.5.7...5.3.", 'E': "5.5.7.8.7.5.3.5.", 'F': "9...8...7.5.7...",
-                  'G': "2...3.5.3...2...", 'H': "0.3.5.7.8.7.5.3."},
-         form="ABACDEFABGCDEHFABACDEHFD",
-         chords=[(0, (0, 3, 7)), (-2, (0, 4, 7)),
-                 (-4, (0, 4, 7)), (-5, (0, 3, 7))],
-         kick={0, 8}, kick_odd={11}, snare={4, 12}, hat=set(range(0, 16, 2))),
-    dict(title="Solar Flare", bpm=128, root=62, scale=MAJOR_PENTA,
-         note="Driving major anthem",
-         phrases={'A': "4.4.5.7.9.7.5.4.", 'B': "7.7.8.9.8.7.5.4.", 'C': "9.8.7.5.7.8.9...",
-                  'D': "5...7...9...8.7.", 'E': "2.4.5.7.9.7.5.4.", 'F': "9.9.8.7.5.4.2.4.",
-                  'G': "7.5.4.2.4.5.7.9.", 'H': "8...9...8.7.5.7."},
-         form="ABABCDEFABABGDEHCDEFGHFH",
-         chords=[(0, (0, 4, 7)), (5, (0, 4, 7)),
-                 (7, (0, 4, 7)), (9, (0, 3, 7))],
-         kick={0, 4, 8, 12}, kick_odd={14}, snare={4, 12}, hat=set(range(0, 16, 2))),
-]
+SONGS = []
 
 
 def lead_midi(song, d):
@@ -1529,7 +1483,7 @@ class Rhythm(ov.BaseGame):
 
     def _menu_target(self, x, y):
         lx, ly = self._to_logical(x, y)
-        for i in range(BUILTIN):
+        for i in range(BUILTIN + 1):
             if self._inside(self._song_rect(i), lx, ly):
                 return ('song', i)
         for i in range(len(DIFFS)):
@@ -1579,6 +1533,9 @@ class Rhythm(ov.BaseGame):
                 return
             kind, i = t
             if kind == 'song':
+                if i == BUILTIN:
+                    self._open_midi()
+                    return
                 if self.song_i == i:
                     self._start_song()
                 self.song_i = i
@@ -1656,8 +1613,15 @@ class Rhythm(ov.BaseGame):
                    W / 2, 468, 15, ov.C_WHITE)
         self._text(c, "Default MIDI songs - or play your own MIDI files",
                    W / 2, 450, 11, ov.C_TEXT)
-        for i, s in enumerate(SONGS[:BUILTIN]):
+        for i, s in enumerate(SONGS[:BUILTIN] + [None]):
             x, y, w, h = self._song_rect(i)
+            if s is None:                                          # the MIDI library card
+                hov = self.menu_hover == ('song', i)
+                c.rect(self._X(x), self._Y(y), w * self.sc, h * self.sc, ov.C_CELL_HOVER if hov else ov.C_CELL)
+                self._text(c, "MIDI Library", x + 14, y + 30, 17, ov.C_WHITE, 'left')
+                self._text(c, "%d file(s) in the 'midi' folder - click to browse" % self.midi_count,
+                           x + 14, y + 10, 10.5, ov.C_TEXT, 'left')
+                continue
             sel = i == self.song_i
             hov = self.menu_hover == ('song', i)
             if sel:
@@ -1876,6 +1840,9 @@ RUNNER = _RhythmRunner("rhythm", GAME_NAME, Rhythm, [
     "Long notes: keep the key held until the tail ends",
     "R: restart song   ESC: quit",
 ])
+
+
+load_default_midi_songs()
 
 
 def draw_ui(layout, context):
