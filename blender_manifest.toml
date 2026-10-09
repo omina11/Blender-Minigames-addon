@@ -7,6 +7,6 @@ tagline = "Play minigames inside the Blender 3D viewport"
 maintainer = "Ester Milanese, Gattalupa <info@gattalupa.com>"
 type = "add-on"
 
-blender_version_min = "4.2.0"
+blender_version_min = "5.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 tags = ["3D View", "Game Engine"]
