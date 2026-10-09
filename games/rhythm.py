@@ -142,7 +142,8 @@ class Note:
         self.t, self.lane, self.midi, self.state, self.dur = t, lane, midi, 0, dur
 
 
-BUILTIN = 5                       # number of songs written in this file (MIDI songs are appended after them)
+BUILTIN = 0                       # the 5 built-in synth songs are gone; defaultmidi/*.mid are loaded instead
+DEFAULT_MIDI = []                 # indexes in SONGS of the defaultmidi songs
 ZIGZAG = (0, 1, 2, 3, 4, 5, 4, 3, 2, 1)
 
 
@@ -297,6 +298,7 @@ _WAV_LOCK = threading.Lock()
 
 SF_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'soundfont')
 FS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fluidsynth')
+DEFAULT_MIDI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'defaultmidi')
 
 
 def _find_fluidsynth():
@@ -928,6 +930,28 @@ def list_midi_files():
     return [(os.path.splitext(f)[0], os.path.join(MIDI_DIR, f)) for f in names]
 
 
+def load_default_midi_songs():
+    """Load the .mid / .midi files from the 'defaultmidi' folder as the built-in songs.
+    The title comes from the file name. They are always available and cannot be removed."""
+    global BUILTIN, DEFAULT_MIDI
+    try:
+        os.makedirs(DEFAULT_MIDI_DIR, exist_ok=True)
+        names = sorted(f for f in os.listdir(DEFAULT_MIDI_DIR)
+                       if f.lower().endswith(('.mid', '.midi')))
+    except Exception:
+        names = []
+    DEFAULT_MIDI = []
+    for f in names:
+        path = os.path.join(DEFAULT_MIDI_DIR, f)
+        try:
+            SONGS.append(analyze_midi(path))
+            DEFAULT_MIDI.append(len(SONGS) - 1)
+        except Exception as e:
+            print("[Minigames/Rhythm] could not load default MIDI %s: %r" % (f, e))
+    BUILTIN = len(DEFAULT_MIDI)
+    return BUILTIN
+
+
 def render_midi_backing(song, path):
     """Synthesise the whole MIDI (all voices + drums) to a wav. Needs numpy for decent speed."""
     dur = song['duration']
@@ -1122,6 +1146,7 @@ class Rhythm(ov.BaseGame):
                                 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'M', 'BACK_SPACE'))
 
     def setup(self):
+        load_default_midi_songs()
         self.song_i = 0
         self.diff = 1
         self.token = 0
@@ -1139,7 +1164,6 @@ class Rhythm(ov.BaseGame):
         self.midi_msg = ""
         self.midi_sel = 0
         if self.song_i >= BUILTIN:
-            cur = SONGS[self.song_i].get('rec_name')
             for k, (name, path) in enumerate(self.midi_files):
                 if SONGS[self.song_i].get('title') == name.replace('_', ' ')[:30]:
                     self.midi_sel = k
@@ -1361,10 +1385,7 @@ class Rhythm(ov.BaseGame):
         n = self.holding.get(lane)
         if n is None:
             return
-        if self.now() >= n.t + n.dur - HOLD_GRACE:
-            self._hold_done(lane)
-        else:
-            self._hold_drop(lane)
+        self._hold_drop(lane)             # a real key release always ends the long note
 
     def key_up(self, key):
         """Called by the runner when a key is released (needed for long notes)."""
@@ -1482,6 +1503,8 @@ class Rhythm(ov.BaseGame):
                 self.diff = (self.diff + 1) % len(DIFFS)
             elif key in ('ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'):
                 self.song_i = {'ONE': 0, 'TWO': 1, 'THREE': 2, 'FOUR': 3, 'FIVE': 4}[key]
+                if self.song_i >= BUILTIN:
+                    self.song_i = 0
             elif key in ('RET', 'NUMPAD_ENTER'):
                 self._start_song()
         elif st in ('results', 'failed') and key in ('RET', 'NUMPAD_ENTER'):
@@ -1506,7 +1529,7 @@ class Rhythm(ov.BaseGame):
 
     def _menu_target(self, x, y):
         lx, ly = self._to_logical(x, y)
-        for i in range(BUILTIN + 1):
+        for i in range(BUILTIN):
             if self._inside(self._song_rect(i), lx, ly):
                 return ('song', i)
         for i in range(len(DIFFS)):
@@ -1556,9 +1579,6 @@ class Rhythm(ov.BaseGame):
                 return
             kind, i = t
             if kind == 'song':
-                if i == BUILTIN:
-                    self._open_midi()
-                    return
                 if self.song_i == i:
                     self._start_song()
                 self.song_i = i
@@ -1634,26 +1654,10 @@ class Rhythm(ov.BaseGame):
             c, "Rhythm", "Pick a song, then press ENTER", ov.C_GOLD)
         self._text(c, "Hit A  S  D  J  K  L  on the beat",
                    W / 2, 468, 15, ov.C_WHITE)
-        self._text(c, "Original songs - or play your own MIDI files",
+        self._text(c, "Default MIDI songs - or play your own MIDI files",
                    W / 2, 450, 11, ov.C_TEXT)
-        for i, s in enumerate(SONGS[:BUILTIN] + [None]):
+        for i, s in enumerate(SONGS[:BUILTIN]):
             x, y, w, h = self._song_rect(i)
-            if s is None:                                          # the MIDI library card
-                is_midi = self.song_i >= BUILTIN
-                hov = self.menu_hover == ('song', i)
-                if is_midi:
-                    c.rect(self._X(x) - 2, self._Y(y) - 2, w * self.sc + 4, h * self.sc + 4, ov.C_GOLD)
-                c.rect(self._X(x), self._Y(y), w * self.sc, h * self.sc, ov.C_CELL_HOVER if hov else ov.C_CELL)
-                sg = SONGS[self.song_i] if is_midi else None
-                self._text(c, ("MIDI: " + sg['title']) if is_midi else "MIDI Library", x + 14, y + 30, 17,
-                           ov.C_WHITE, 'left')
-                self._text(c, (sg['note'] if is_midi else "%d file(s) in the 'midi' folder - click to browse" % self.midi_count),
-                           x + 14, y + 10, 10.5, ov.C_TEXT, 'left')
-                if is_midi:
-                    best = self._best(self.song_i, self.diff)
-                    self._text(c, "Best %d" % best if best else "No score yet", x + w - 14, y + 10, 11,
-                               ov.C_GOLD if best else ov.C_TEXT, 'right')
-                continue
             sel = i == self.song_i
             hov = self.menu_hover == ('song', i)
             if sel:
@@ -1662,8 +1666,8 @@ class Rhythm(ov.BaseGame):
             c.rect(self._X(x), self._Y(y), w * self.sc, h * self.sc,
                    ov.C_CELL_HOVER if hov else ov.C_CELL)
             self._text(c, s['title'], x + 14, y + 30, 17, ov.C_WHITE, 'left')
-            self._text(c, "%d BPM  -  %s" %
-                       (s['bpm'], s['note']), x + 14, y + 10, 11, ov.C_TEXT, 'left')
+            self._text(c, "%s" %
+                       s['note'], x + 14, y + 10, 10.5, ov.C_TEXT, 'left')
             best = self._best(i, self.diff)
             self._text(c, "Best %d" % best if best else "No score yet", x + w - 14, y + 10, 11,
                        ov.C_GOLD if best else ov.C_TEXT, 'right')
@@ -1684,7 +1688,7 @@ class Rhythm(ov.BaseGame):
         self._text(c, "Audio offset %+d ms  ( , and . to adjust )" % round(OFFSET[0] * 1000),
                    W / 2, 38, 11, ov.C_TEXT)
         self.draw_hint(
-            c, "Up/Down song  Left/Right level  ENTER start  1-5 pick  6 / M: MIDI library  ESC quit")
+            c, "Up/Down song  Left/Right level  ENTER start  6 / M: MIDI library  ESC quit")
 
     def _draw_midi(self, c):
         self.draw_header(c, "MIDI Library", "Pick a file - the game finds the melody and rhythm for you", ov.C_GOLD)
