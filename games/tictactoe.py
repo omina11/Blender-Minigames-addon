@@ -98,7 +98,6 @@ class TicTacToe(ov.BaseGame):
             else:
                 self.record_mgr.add_lose_record()
         else:
-            # PVP: ogni vittoria conta come "vittoria"
             self.record_mgr.add_win_record(score=1)
 
     def _record_draw(self):
@@ -183,10 +182,10 @@ class TicTacToe(ov.BaseGame):
         sub = "%s | X: %d Draws: %d O: %d" % (
             mode, self.score['X'], self.score['D'], self.score['O'])
 
-        # record persistenti (totale, non solo la sessione)
+        # persistent record 
         if self.record_mgr:
             rec = self.record_mgr.get_records()
-            sub += "\nTotale: %d W %d L %d D (giocate: %d)" % (
+            sub += "\nTotal: %d W %d L %d D (played: %d)" % (
                 rec['wins'], rec['losses'], rec['draws'],
                 rec['total_games_played'])
 

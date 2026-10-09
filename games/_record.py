@@ -5,37 +5,37 @@ from datetime import datetime
 
 
 class RecordManager:
-    """Gestore universale per record di gioco - Salva nella cartella dell'addon."""
+    """Universal game record manager - saves inside the add-on folder."""
 
     def __init__(self, game_name=None):
         """
-        Inizializza il gestore.
+        Initialise the manager.
         Args:
-            game_name (str): Opzionale. Se None o "auto", usa il nome della classe del gioco corrente.
+            game_name (str): Optional. If None or "auto", the name of the current game class is used.
         """
         self.game_name = game_name or _get_auto_game_name()
 
-        # Trova dove risiede questo file Python (cartella dell'addon)
+        # Find where this Python file lives (the add-on folder)
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # Crea una cartella 'save' nella directory del progetto corrente
+        # Use a 'save' folder inside the current project directory
         self.save_dir = os.path.join(base_dir, 'save')
 
-        # Se non esiste la cartella, créala
+        # Create the folder if it does not exist
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 
-            print(f"Cartella record creata in: {self.save_dir}")
+            print(f"Record folder created at: {self.save_dir}")
 
     @property
     def save_file(self):
-        """Ritorna il percorso del file di salvataggio."""
-        # Crea un file distinto per ogni gioco (es. battleship_record.json, tictactoe_record.json)
+        """Return the path of the save file."""
+        # One separate file per game (e.g. battleship_record.json, tictactoe_record.json)
         game_name = getattr(self, 'game_name', 'default')
         return os.path.join(self.save_dir, f"{game_name}_record.json")
 
     def _load_file(self):
-        """Carica i dati dal file JSON o restituisce una struttura vuota."""
+        """Load the data from the JSON file, or return an empty structure."""
         save_path = self.save_file
 
         try:
@@ -44,7 +44,7 @@ class RecordManager:
                 data.setdefault("best_time", None)
                 return data
         except FileNotFoundError:
-            # Prima volta che salvi in questa sessione
+            # First time this game is saved
             return {
                 "wins": 0,
                 "losses": 0,
@@ -56,20 +56,20 @@ class RecordManager:
             }
 
     def _save_file(self, data):
-        """Salva i dati nel file JSON."""
+        """Write the data to the JSON file."""
         try:
             with open(self.save_file, 'w') as f:
                 json.dump(data, f, indent=2)
         except IOError as e:
-            print(f"⚠️ Errore nella scrittura del file di salvataggio: {e}")
+            print(f"Warning: could not write the save file: {e}")
 
     def add_win_record(self, score=0, best_time=None):
-        """Registra una vittoria."""
+        """Record a win."""
         records = self._load_file()
         records["wins"] += 1
         records["total_games_played"] += 1
 
-        # Se c'è un punteggio (es. numero di navi affondate o mossa più veloce), aggiorna il record migliore
+        # If a score is given (e.g. ships sunk, points, ...), update the best score
         if score > records.get("highest_score", 0):
             records["highest_score"] = score
 
@@ -78,14 +78,14 @@ class RecordManager:
             if bt is None or best_time < bt:
                 records["best_time"] = round(best_time, 1)
 
-        # Salva la data dell'ultima vittoria
+        # Store the date of the last win
         records["last_win_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         self._save_file(records)
         return records
 
     def add_lose_record(self):
-        """Registra una sconfitta."""
+        """Record a loss."""
         records = self._load_file()
         records["losses"] += 1
         records["total_games_played"] += 1
@@ -93,7 +93,7 @@ class RecordManager:
         return records
 
     def add_draw_record(self):
-        """Registra un pareggio (usato per Tic Tac Toe)."""
+        """Record a draw (used e.g. by Tic Tac Toe)."""
         records = self._load_file()
         records["draws"] += 1
         records["total_games_played"] += 1
@@ -101,9 +101,9 @@ class RecordManager:
         return records
 
     def reset_record(self):
-        """Resetta tutti i record al valore predefinito."""
+        """Reset every record to its default value."""
         confirm = input(
-            "⚠️ Sei sicuro di voler resettare i record? Rispondi 'y' per confermare: ")
+            "Are you sure you want to reset the records? Type 'y' to confirm: ")
 
         if confirm.lower() == 'y':
             self._save_file({
@@ -117,20 +117,20 @@ class RecordManager:
             })
             return True
         else:
-            print("Reset annullato.")
+            print("Reset cancelled.")
             return False
 
     def get_records(self):
-        """Ritorna i record attuali."""
+        """Return the current records."""
         return self._load_file()
 
-# Funzione helper per rilevare il nome del gioco in automatico
+# Helper that detects the game name automatically
 
 
 def _get_auto_game_name():
     """
-    Cerca di ottenere il nome della classe corrente (se viene chiamato da __init__ di una classe).
-    Se non è disponibile, usa 'default'.
+    Try to get the name of the calling class (when called from a class __init__).
+    If it is not available, use 'default'.
     """
     import inspect
     try:
@@ -139,16 +139,16 @@ def _get_auto_game_name():
     except Exception:
         return "default"
 
-# Funzione per creare la cartella 'save' automaticamente
+# Helper that creates the 'save' folder automatically
 
 
 def _ensure_save_folder(base_dir):
-    """Assicura che la cartella di salvataggio esista."""
+    """Make sure the save folder exists."""
     save_path = os.path.join(base_dir, 'save')
     if not os.path.exists(save_path):
         try:
             os.makedirs(save_path)
             return True
         except OSError as e:
-            print(f"⚠️ Errore nella creazione della cartella: {e}")
+            print(f"Warning: could not create the folder: {e}")
     return False

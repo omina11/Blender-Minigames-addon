@@ -12,7 +12,7 @@ class MINIGAMES_OT_mygame_play(bpy.types.Operator):
     bl_label = "Play My Game"
 
     def execute(self, context):
-        self.report({'INFO'}, "Hello from My Game")
+        self.report({'INFO'}, "Welcome")
         return {'FINISHED'}
 
 
