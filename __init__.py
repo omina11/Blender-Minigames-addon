@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Minigames",
     "author": "Ester Milanese, Gattalupa",
-    "version": (0, 0, 1),
+    "version": (0, 0, 2),
     "blender": (4, 5, 0),
     "location": "3D Viewport > Sidebar (N) > Minigames",
     "description": "A collection of minigames playable inside Blender",
