@@ -15,3 +15,5 @@ Is it productive? Definitely not.
 But if you ever need a little break without leaving Blender, now you can have one.
 
 Built purely for fun, experimentation, and the questionable decision to turn Blender into a tiny arcade.
+
+Tested on Blender 5.2+
