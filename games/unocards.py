@@ -1,4 +1,4 @@
-"""GTLP Cards - the classic colour-matching card game against 2-3 CPU players (GPU overlay).
+"""Last Card - the classic colour-matching card game against 2-3 CPU players (GPU overlay).
 
 Match the top card by COLOUR or by NUMBER / SYMBOL. Special cards:
     Skip (a circle with a bar)  - the next player loses their turn
@@ -10,7 +10,7 @@ Can't play? Draw a card (click the deck or press SPACE): if it fits you may play
 otherwise the turn passes. First to empty their hand wins.
 
 Difficulties: Easy (2 opponents, random CPU), Medium (3 opponents, smarter CPU),
-Hard (3 opponents, tactical CPU and you MUST press GTLP (G) before playing your
+Hard (3 opponents, tactical CPU and you MUST call Last Card (L) before playing your
 second-last card or you draw 2). Best score and fastest win saved per difficulty
 (gtlp_easy / gtlp_medium / gtlp_hard).
 """
@@ -22,7 +22,7 @@ import traceback
 from . import _overlay as ov
 from . import _record as _rec
 
-GAME_NAME = "GTLP Cards"
+GAME_NAME = "Last Card"
 GAME_ICON = 'COLOR'
 
 W, H = 720.0, 480.0
@@ -38,9 +38,9 @@ ORDER = ('R', 'Y', 'G', 'B')
 COLOR_NAME = {'R': "red", 'Y': "yellow", 'G': "green", 'B': "blue"}
 
 DIFFS = [
-    dict(name="Easy", info="2 opponents - the CPU plays at random", n=3, level=0, gtlp_call=False, mult=1.0, col=(0.45, 0.85, 0.45)),
-    dict(name="Medium", info="3 opponents - the CPU plays with a plan", n=4, level=1, gtlp_call=False, mult=1.5, col=(1.0, 0.65, 0.25)),
-    dict(name="Hard", info="3 opponents - tactical CPU, you must call GTLP", n=4, level=2, gtlp_call=True, mult=2.0, col=(0.95, 0.30, 0.30)),
+    dict(name="Easy", info="2 opponents - the CPU plays at random", n=3, level=0, last_card_call=False, mult=1.0, col=(0.45, 0.85, 0.45)),
+    dict(name="Medium", info="3 opponents - the CPU plays with a plan", n=4, level=1, last_card_call=False, mult=1.5, col=(1.0, 0.65, 0.25)),
+    dict(name="Hard", info="3 opponents - tactical CPU, you must call Last Card", n=4, level=2, last_card_call=True, mult=2.0, col=(0.95, 0.30, 0.30)),
 ]
 DIGITS = {'ONE': 0, 'TWO': 1, 'THREE': 2, 'FOUR': 3, 'NUMPAD_1': 0, 'NUMPAD_2': 1, 'NUMPAD_3': 2, 'NUMPAD_4': 3}
 NAMES = ("You", "Ada", "Bob", "Cleo")
@@ -77,8 +77,8 @@ def _value(card):
     return 50 if card[0] == 'W' else 20
 
 
-class GtlpCards(ov.BaseGame):
-    keys = ('SPACE', 'G', 'M', 'N', 'ONE', 'TWO', 'THREE', 'FOUR', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4')
+class LastCard(ov.BaseGame):
+    keys = ('SPACE', 'L', 'M', 'N', 'ONE', 'TWO', 'THREE', 'FOUR', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4')
 
     # ------------------------------------------------------------------ setup
     def setup(self):
@@ -119,7 +119,7 @@ class GtlpCards(ov.BaseGame):
         self.wait = 1.0
         self.drawn = None                      # index of the card just drawn by you (only it may be played)
         self.pending_wild = None
-        self.gtlp_called = False
+        self.last_card_called = False
         self.msg, self.msg_t = "", 0.0
         self.log = []
         self.anims = []
@@ -267,9 +267,9 @@ class GtlpCards(ov.BaseGame):
             self._finish(p)
             return
         if len(self.hands[p]) == 1 and p != 0:
-            self.say("%s: GTLP!" % NAMES[p])
+            self.say("%s: Last Card!" % NAMES[p])
         self.wait = 0.9
-        self.gtlp_called = False
+        self.last_card_called = False
 
     @staticmethod
     def _cname(card):
@@ -398,8 +398,8 @@ class GtlpCards(ov.BaseGame):
     def _deck_rect(self):
         return DRAW_X, PILE_Y, CW, CH
 
-    def _gtlp_rect(self):
-        return W - 150.0, 150.0, 110.0, 36.0
+    def _last_card_rect(self):
+        return W - 170.0, 150.0, 130.0, 36.0
 
     def _pick_rects(self):
         return [(W / 2 - 124 + i * 64, 200.0, 56.0, 56.0) for i in range(4)]
@@ -456,9 +456,9 @@ class GtlpCards(ov.BaseGame):
         if not self._playable(card):
             self.say("That card doesn't match")
             return
-        if len(self.hands[0]) == 2 and self.cfg['gtlp_call'] and not self.gtlp_called:
+        if len(self.hands[0]) == 2 and self.cfg['last_card_call'] and not self.last_card_called:
             self._draw_cards(0, 2)
-            self.say("You forgot to call GTLP!  +2 cards")
+            self.say("You forgot to call Last Card!  +2 cards")
             self.turn = self._next(0)
             self.wait = 0.9
             self.drawn = None
@@ -499,18 +499,18 @@ class GtlpCards(ov.BaseGame):
         if dx <= lx <= dx + dw and dy <= ly <= dy + dh:
             self._human_draw()
             return
-        ux, uy, uw, uh = self._gtlp_rect()
-        if self.cfg['gtlp_call'] and ux <= lx <= ux + uw and uy <= ly <= uy + uh:
-            self._call_gtlp()
+        ux, uy, uw, uh = self._last_card_rect()
+        if self.cfg['last_card_call'] and ux <= lx <= ux + uw and uy <= ly <= uy + uh:
+            self._call_last_card()
             return
         i = self._hand_hit(lx, ly)
         if i >= 0:
             self._human_play(i)
 
-    def _call_gtlp(self):
+    def _call_last_card(self):
         if len(self.hands[0]) == 2 and self.turn == 0:
-            self.gtlp_called = True
-            self.say("GTLP!")
+            self.last_card_called = True
+            self.say("Last Card!")
 
     def key(self, key, repeat):
         if self.menu:
@@ -531,8 +531,8 @@ class GtlpCards(ov.BaseGame):
         elif self.phase == 'play':
             if key == 'SPACE':
                 self._human_draw()
-            elif key == 'G' and self.cfg['gtlp_call']:
-                self._call_gtlp()
+            elif key == 'L' and self.cfg['last_card_call']:
+                self._call_last_card()
         elif self.phase == 'over' and key == 'SPACE':
             self._deal()
 
@@ -658,11 +658,11 @@ class GtlpCards(ov.BaseGame):
         self._rr(c, sx - 45, sy - 44, 90, 22, 10, (0, 0, 0, 0.55))
         self._text(c, "%s  %d" % (NAMES[p], n), sx, sy - 33, 11, (1.0, 0.9, 0.4, 1) if active else ov.C_WHITE)
         if n == 1:
-            self._text(c, "GTLP!", sx, sy + 48, 12, (1.0, 0.85, 0.2, 1))
+            self._text(c, "Last Card!", sx, sy + 48, 12, (1.0, 0.85, 0.2, 1))
 
     def _menu(self, c):
         self._table(c)
-        self._text(c, "GTLP CARDS", W / 2, 442, 46, (1.0, 0.85 + 0.1 * math.sin(self.time * 2), 0.25, 1))
+        self._text(c, "LAST CARD", W / 2, 442, 46, (1.0, 0.85 + 0.1 * math.sin(self.time * 2), 0.25, 1))
         for i, card in enumerate((('R', '7'), ('Y', 'S'), ('G', 'D'), ('B', 'V'), ('W', 'F'))):
             self._card_face(c, card, W / 2 - 170 + i * 72, 322 + 4 * math.sin(self.time * 2 + i), 62, 92)
         self._text(c, "Match colours or numbers - empty your hand first", W / 2, 303, 13, (1, 1, 1, 0.75))
@@ -685,12 +685,12 @@ class GtlpCards(ov.BaseGame):
         self.draw_frame(c)
         bs, bt = self._best(self.diff)
         if self.menu:
-            self.draw_header(c, "GTLP CARDS", "Best score and fastest win saved for every difficulty", ov.C_GOLD)
+            self.draw_header(c, "LAST CARD", "Best score and fastest win saved for every difficulty", ov.C_GOLD)
             self._menu(c)
             self.draw_hint(c, "Click or press 1-3 to pick a difficulty   ESC quit")
             return
         who = "your turn" if self.turn == 0 else "%s is playing" % NAMES[self.turn]
-        self.draw_header(c, "GTLP CARDS - %s" % self.cfg['name'],
+        self.draw_header(c, "LAST CARD - %s" % self.cfg['name'],
                          "%s   |   Time %s   |   Best %d (%s)" % (who if self.phase != 'over' else "game over",
                                                                   _fmt(self.play_t), bs, _fmt(bt)),
                          tuple(self.cfg['col']) + (1.0,))
@@ -748,10 +748,10 @@ class GtlpCards(ov.BaseGame):
             self._card_face(c, card, x0 + i * step, 8 + lift, CW, CH, dim=not ok and self.turn == 0 and self.phase in ('play', 'color'), glow=glow)
         self._rr(c, W / 2 - 40, 124, 80, 20, 9, (0, 0, 0, 0.5))
         self._text(c, "You  %d" % n, W / 2, 134, 10.5, (1.0, 0.9, 0.4, 1) if self.turn == 0 and self.phase == 'play' else ov.C_WHITE)
-        if self.cfg['gtlp_call'] and self.turn == 0 and n == 2 and self.phase == 'play':
-            ux, uy, uw, uh = self._gtlp_rect()
-            self._rr(c, ux, uy, uw, uh, 10, (0.95, 0.25 + 0.4 * (1 if self.gtlp_called else abs(math.sin(self.time * 6))), 0.2, 1))
-            self._text(c, "GTLP! (G)" if not self.gtlp_called else "GTLP called", ux + uw / 2, uy + uh / 2, 13, (1, 1, 1, 1))
+        if self.cfg['last_card_call'] and self.turn == 0 and n == 2 and self.phase == 'play':
+            ux, uy, uw, uh = self._last_card_rect()
+            self._rr(c, ux, uy, uw, uh, 10, (0.95, 0.25 + 0.4 * (1 if self.last_card_called else abs(math.sin(self.time * 6))), 0.2, 1))
+            self._text(c, "Last Card! (L)" if not self.last_card_called else "Last Card called", ux + uw / 2, uy + uh / 2, 12, (1, 1, 1, 1))
         # toast
         if self.msg_t > 0:
             self._rr(c, W / 2 - 190, 346, 380, 24, 10, (0, 0, 0, 0.55 * min(1.0, self.msg_t * 2)))
@@ -775,17 +775,17 @@ class GtlpCards(ov.BaseGame):
             else:
                 self._text(c, "Cards left: " + "  ".join("%s %d" % (NAMES[i], len(h)) for i, h in enumerate(self.hands)), W / 2, 260, 13, ov.C_TEXT)
             self._text(c, "SPACE / click: new game     M: difficulty", W / 2, 180, 13, ov.C_TEXT)
-        if self.cfg['gtlp_call']:
-            self.draw_hint(c, "Click a card   deck / SPACE: draw or pass   G: call GTLP   N new   M menu")
+        if self.cfg['last_card_call']:
+            self.draw_hint(c, "Click a card   deck / SPACE: draw or pass   L: call Last Card   N new   M menu")
         else:
             self.draw_hint(c, "Click a card   deck / SPACE: draw or pass   N new   M menu   R restart")
 
 
-RUNNER = ov.Runner("unocards", GAME_NAME, GtlpCards, [
+RUNNER = ov.Runner("unocards", GAME_NAME, LastCard, [
     "Click a card to play it (matching colour or number)",
     "No match? Click the deck / SPACE to draw",
-    "Skip, Reverse, +2, Wild, Wild +4 work as in GTLP",
-    "Hard: press G before your second-last card",
+    "Skip, Reverse, +2, Wild, Wild +4 are all included",
+    "Hard: press L (Last Card) before your second-last card",
     "Best score + fastest win saved per difficulty",
     "M: difficulty   N: new game   ESC: quit",
 ])
