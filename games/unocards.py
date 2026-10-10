@@ -23,7 +23,7 @@ from . import _overlay as ov
 from . import _record as _rec
 
 GAME_NAME = "Last Card"
-GAME_ICON = 'COLOR'
+GAME_ICON = 'DUPLICATE'
 
 W, H = 720.0, 480.0
 CW, CH = 62.0, 92.0
